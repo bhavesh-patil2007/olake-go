@@ -171,8 +171,7 @@ func (p *CSVParser) StreamRecords(ctx context.Context, reader io.Reader, callbac
 			break
 		}
 		if err != nil {
-			logger.Warnf("Error reading CSV row %d: %v", recordCount, err)
-			continue
+			return fmt.Errorf("failed to read CSV row %d: %w", recordCount+1, err)
 		}
 
 		// Convert row to map
