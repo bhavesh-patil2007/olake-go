@@ -471,3 +471,48 @@ func TestCSVParser_StreamRecords_ColumnMissingFromSchema(t *testing.T) {
 	assert.Nil(t, records[1]["active"], "empty boolean unknown cell is null")
 	assert.Nil(t, records[1]["created"], "empty timestamp unknown cell is null")
 }
+
+
+func TestCSVParser_StreamRecords_MalformedRowReturnsError(t *testing.T) {
+	config := CSVConfig{
+		Delimiter: ",",
+		HasHeader: true,
+	}
+	stream := types.NewStream("test", "test", nil)
+	stream.UpsertField("id", types.String, true, false)
+	stream.UpsertField("name", types.String, true, false)
+	parser := NewCSVParser(config, stream)
+
+	// The second data row has an extra field. The parser must not silently skip it
+	// and report a successful, incomplete file sync.
+	csvData := "id,name\\n1,Alice\\n2,Bob,unexpected\\n3,Carol\\n"
+	var records []map[string]any
+	err := parser.StreamRecords(context.Background(), strings.NewReader(csvData), func(_ context.Context, record map[string]any) error {
+		records = append(records, record)
+		return nil
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read CSV row")
+	assert.Len(t, records, 1, "records before the malformed row may be emitted, but sync must fail")
+}
+
+func TestCSVParser_StreamRecords_ValidRowsStillStream(t *testing.T) {
+	config := CSVConfig{Delimiter: ",", HasHeader: true}
+	stream := types.NewStream("test", "test", nil)
+	stream.UpsertField("id", types.String, true, false)
+	stream.UpsertField("name", types.String, true, false)
+	parser := NewCSVParser(config, stream)
+
+	csvData := "id,name\\n1,Alice\\n2,Bob\\n"
+	var records []map[string]any
+	err := parser.StreamRecords(context.Background(), strings.NewReader(csvData), func(_ context.Context, record map[string]any) error {
+		records = append(records, record)
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+	assert.Equal(t, "Alice", records[0]["name"])
+	assert.Equal(t, "Bob", records[1]["name"])
+}
